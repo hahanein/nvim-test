@@ -1,3 +1,5 @@
+local base = require("test.base")
+
 local M = {}
 
 -- Helper functions

@@ -66,33 +66,35 @@ vim.g["test#custom_strategies"] = vim.tbl_get(vim.g, "test#custom_strategies") o
 vim.g["test#custom_transformations"] = vim.tbl_get(vim.g, "test#custom_transformations") or {}
 vim.g["test#runner_commands"] = vim.tbl_get(vim.g, "test#runner_commands") or {}
 
+local test = require("test")
+
 -- Define commands
 vim.api.nvim_create_user_command("TestNearest", function(opts)
-	vim.fn["test#run"]("nearest", vim.split(opts.args, "%s+"))
+	test.run("nearest", vim.split(opts.args, "%s+"))
 end, { nargs = "*", bar = true })
 
 vim.api.nvim_create_user_command("TestFile", function(opts)
-	vim.fn["test#run"]("file", vim.split(opts.args, "%s+"))
+	test.run("file", vim.split(opts.args, "%s+"))
 end, { nargs = "*", bar = true, complete = "file" })
 
 vim.api.nvim_create_user_command("TestClass", function(opts)
-	vim.fn["test#run"]("class", vim.split(opts.args, "%s+"))
+	test.run("class", vim.split(opts.args, "%s+"))
 end, { nargs = "*", bar = true })
 
 vim.api.nvim_create_user_command("TestSuite", function(opts)
-	vim.fn["test#run"]("suite", vim.split(opts.args, "%s+"))
+	test.run("suite", vim.split(opts.args, "%s+"))
 end, { nargs = "*", bar = true })
 
 vim.api.nvim_create_user_command("TestLast", function(opts)
-	vim.fn["test#run_last"](vim.split(opts.args, "%s+"))
+	test.run_last(vim.split(opts.args, "%s+"))
 end, { nargs = "*", bar = true })
 
 vim.api.nvim_create_user_command("TestVisit", function()
-	vim.fn["test#visit"]()
+	test.visit()
 end, { bar = true })
 
 -- Iterate through runners and define additional commands
-for language, runners in pairs(vim.fn["test#get_runners"]()) do
+for language, runners in pairs(test.get_runners()) do
 	for _, runner in ipairs(runners) do
 		if vim.fn.index(vim.g["test#runner_commands"], runner) ~= -1 then
 			if vim.fn.exists(":" .. runner) == 2 then
