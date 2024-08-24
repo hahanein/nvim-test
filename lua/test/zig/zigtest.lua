@@ -1,39 +1,53 @@
-if !exists('g:test#zig#zigtest#file_pattern')
-  let g:test#zig#zigtest#file_pattern = '\v\.zig$'
-endif
+local base = require("test.base")
 
-function! test#zig#zigtest#test_file(file) abort
-  return a:file =~# g:test#zig#zigtest#file_pattern
-endfunction
+local M = {}
 
-function! test#zig#zigtest#build_position(type, position) abort
-  if a:type ==# 'nearest'
-    let name = s:nearest_test(a:position)
-    if empty(name)
-      return ['test', a:position['file']]
-    endif
+-- Check if the global variable 'g:test#zig#zigtest#file_pattern' exists and set it if not
+if not vim.g["test#zig#zigtest#file_pattern"] then
+	vim.g["test#zig#zigtest#file_pattern"] = ".zig$"
+end
 
-    return ['test', a:position['file'],  '--test-filter '.shellescape(name, 1)]
-  elseif a:type ==# 'file'
-    return ['test', a:position['file']]
-  else
-    return []
-  endif
-endfunction
+-- Function to check if a file matches the zig test file pattern
+function M.test_file(file)
+	return string.match(file, vim.g["test#zig#zigtest#file_pattern"]) ~= nil
+end
 
-function! test#zig#zigtest#build_args(args)
-  if empty(filter(copy(a:args), 'test#base#file_exists(v:val)'))
-    call add(a:args, 'build test')
-  endif
+-- Helper function to find the nearest test
+local function nearest_test(position)
+	local name = base.nearest_test(position, vim.g["test#zig#patterns"])
+	return base.escape_regex(table.concat(name.test, ""))
+end
 
-  return a:args
-endfunction
+-- Function to build the test command position based on the type of test
+function M.build_position(test_type, position)
+	if test_type == "nearest" then
+		local name = nearest_test(position)
+		if name == "" then
+			return { "test", position.file }
+		else
+			return { "test", position.file, "--test-filter " .. vim.fn.shellescape(name, 1) }
+		end
+	elseif test_type == "file" then
+		return { "test", position.file }
+	else
+		return {}
+	end
+end
 
-function! test#zig#zigtest#executable() abort
-  return 'zig'
-endfunction
+-- Function to build the test command arguments
+function M.build_args(args)
+	if vim.tbl_isempty(vim.tbl_filter(function(val)
+		return base.file_exists(val)
+	end, vim.deepcopy(args))) then
+		table.insert(args, "build test")
+	end
 
-function! s:nearest_test(position) abort
-  let name = test#base#nearest_test(a:position, g:test#zig#patterns)
-  return test#base#escape_regex(join(name['test']))
-endfunction
+	return args
+end
+
+-- Function to get the test executable
+function M.executable()
+	return "zig"
+end
+
+return M

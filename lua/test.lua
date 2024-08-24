@@ -18,10 +18,6 @@ local function alternate_file()
 		result = vim.g.test_custom_alternate_file()
 	end
 
-	if result == "" and vim.g.loaded_rails and vim.fn["rails#app"]() ~= "" then
-		result = vim.fn["rails#buffer"]().alternate()
-	end
-
 	return result
 end
 
@@ -65,14 +61,6 @@ local function get_position(path)
 	return position
 end
 
-local function extract_strategy_from_command(arguments)
-	for idx = 1, #arguments do
-		if arguments[idx]:match("^-strategy=") then
-			return arguments[idx]:gsub("^-strategy=", "")
-		end
-	end
-end
-
 local function extract_env_from_command(arguments)
 	local env = vim.tbl_filter(function(val)
 		return val:match("^[A-Z_]+=.+")
@@ -98,7 +86,7 @@ local function extend(source, dict)
 end
 
 -- Main functions
-function M.run(type, arguments)
+function M.run(run_type, arguments)
 	before_run()
 
 	local file = alternate_file()
@@ -123,16 +111,11 @@ function M.run(type, arguments)
 
 	local runner = M.determine_runner(position.file)
 
-	local args = vim.fn["test#base#build_position"](runner, type, position)
+	local args = base.build_position(runner, run_type, position)
 	args = vim.list_extend(arguments, args)
-	args = vim.fn["test#base#options"](runner, args, type)
+	args = base.options(runner, args, run_type)
 
-	if type(vim.g["test#strategy"]) == "table" then
-		local strategy = vim.g["test#strategy"][type]
-		M.execute(runner, args, strategy)
-	else
-		M.execute(runner, args)
-	end
+	M.execute(runner, args)
 
 	after_run()
 end
@@ -142,19 +125,14 @@ function M.run_last(arguments)
 		before_run()
 
 		local env = extract_env_from_command(arguments)
-		local strategy = extract_strategy_from_command(arguments)
-
-		if strategy == "" then
-			strategy = vim.g["test#last_strategy"]
-		end
-
 		local cmd = { env, vim.g["test#last_command"] }
+
 		vim.list_extend(cmd, arguments)
 		vim.tbl_filter(function(v)
 			return v ~= ""
 		end, cmd)
 
-		M.shell(table.concat(cmd, " "), strategy)
+		M.shell(table.concat(cmd, " "))
 
 		after_run()
 	else
@@ -174,63 +152,43 @@ function M.visit()
 	end
 end
 
-function M.execute(runner, args, ...)
+function M.execute(runner, args)
 	local env = extract_env_from_command(args)
-	local strategy = extract_strategy_from_command(args)
-	if strategy == "" then
-		if #{ ... } > 0 then
-			strategy = select(1, ...)
-		else
-			strategy = vim.g["test#strategy"]
-		end
-	end
-	if strategy == "" then
-		strategy = "basic"
-	end
 
-	args = vim.fn["test#base#options"](runner, args)
+	args = base.options(runner, args)
 	vim.tbl_filter(function(v)
 		return v ~= ""
 	end, args)
 
-	local executable = vim.fn["test#base#executable"](runner)
-	args = vim.fn["test#base#build_args"](runner, args, strategy)
+	local executable = runner.executable()
+	args = base.build_args(runner, args)
 	local cmd = { env, executable }
 	vim.list_extend(cmd, args)
 	vim.tbl_filter(function(v)
 		return v ~= ""
 	end, cmd)
-
-	M.shell(table.concat(cmd, " "), strategy)
+	M.shell(table.concat(cmd, " "))
 end
 
-function M.shell(cmd, strategy)
+function M.shell(cmd)
 	vim.g["test#last_command"] = cmd
-	vim.g["test#last_strategy"] = strategy
 
 	if vim.g["test#transformation"] then
 		cmd = vim.g["test#custom_transformations"][vim.g["test#transformation"]](cmd)
 	end
 
-	if cmd:match("^:") then
-		strategy = "vimscript"
-	end
-
-	if vim.g["test#custom_strategies"] and vim.g["test#custom_strategies"][strategy] then
-		vim.g["test#custom_strategies"][strategy](cmd)
-	else
-		vim.fn["test#strategy#" .. strategy](cmd)
-	end
+	vim.cmd(":AsyncRun " .. cmd)
 end
 
 function M.determine_runner(file)
 	for language, runners in pairs(M.get_runners()) do
 		for _, runner in ipairs(runners) do
-			runner = string.lower(language) .. "#" .. string.lower(runner)
+			require("test." .. string.lower(language))
+			runner = require("test." .. string.lower(language) .. "." .. string.lower(runner))
 			if vim.g["test#enabled_runners"] and not vim.tbl_contains(vim.g["test#enabled_runners"], runner) then
 				goto continue
 			end
-			if vim.fn["test#base#test_file"](runner, vim.fn.fnamemodify(file, ":p:.")) then
+			if base.test_file(runner, vim.fn.fnamemodify(file, ":p:.")) then
 				return runner
 			end
 			::continue::

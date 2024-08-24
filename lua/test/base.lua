@@ -1,162 +1,133 @@
-function! test#base#test_file(runner, file) abort
-  return test#{a:runner}#test_file(a:file)
-endfunction
+local M = {}
 
-function! test#base#build_position(runner, type, position) abort
-  return test#{a:runner}#build_position(a:type, a:position)
-endfunction
+function M.test_file(runner, file)
+	return runner.test_file(file)
+end
 
-function! test#base#options(runner, args, ...) abort
-  let options = get(g:, 'test#'.a:runner.'#options', [])
-  if empty(a:000) && type(options) == type('')
-    let options = split(options)
-  elseif !empty(a:000) && type(options) == type({})
-    let options = split(get(options, 'all', '')) + split(get(options, a:000[0], ''))
-  else
-    let options = []
-  endif
-  if exists('*test#'.a:runner.'#build_options')
-    return test#{a:runner}#build_options(a:args, options)
-  else
-    return options + a:args
-  endif
-endfunction
+function M.build_position(runner, run_type, position)
+	return runner.build_position(run_type, position)
+end
 
-function! test#base#executable(runner) abort
-  if exists('g:test#'.a:runner.'#executable')
-    return g:test#{a:runner}#executable
-  else
-    return test#{a:runner}#executable()
-  endif
-endfunction
+function M.options(runner, args, ...)
+	local options = runner.options or {}
 
-function! test#base#build_args(runner, args, strategy) abort
-  let no_color = has('gui_running') && a:strategy ==# 'basic'
+	if vim.tbl_isempty({ ... }) and type(options) == "string" then
+		options = vim.split(options, "%s+")
+	elseif not vim.tbl_isempty({ ... }) and type(options) == "table" then
+		local key = ({ ... })[1]
+		options = vim.list_extend(vim.split(options.all or "", "%s+"), vim.split(options[key] or "", "%s+"))
+	else
+		options = {}
+	end
 
-  try
-    " Before Vim 8.0.1423 exceptions thrown from return statement
-    " cannot be caught.
-    " https://github.com/vim/vim/pull/2483
-    let args = test#{a:runner}#build_args(a:args, !no_color)
-    return args
-  catch /^Vim\%((\a\+)\)\=:E118:/ " too many arguments
-    return test#{a:runner}#build_args(a:args)
-  endtry
-endfunction
+	if runner.build_options == nil then
+		return vim.list_extend(options, args)
+	else
+		return runner.build_options(args, options)
+	end
+end
 
-function! test#base#file_exists(file) abort
-  return !empty(glob(a:file)) || bufexists(a:file)
-endfunction
+function M.build_args(runner, args)
+	local no_color = vim.fn.has("gui_running") == 1
 
-function! test#base#escape_regex(string) abort
-  return escape(a:string, '?+*\^$.|{}[]()')
-endfunction
+	local ok, result = pcall(function()
+		return runner.build_args(args, not no_color)
+	end)
 
-" Takes a position and a dictionary of patterns and a optional configuration, and returns list of strings
-" that were matched in the file by the patterns from the given position
-" upwards. It can be used when a runner doesn't support running nearest tests
-" with line numbers, but supports regexes.
-"
-" The "position" argument is a dictionary created by this plugin:
-"
-"   {
-"     'file': 'test/foo_test.rb',
-"     'line': 11,
-"     'col': 2,
-"   }
-"
-" The "patterns" argument is a dictionary where keys are either "test" or
-" "namespace", and values are lists of regexes:
-"
-"   {
-"     'test': ['\v^\s*def (test_\w+)'],
-"     'namespace': ['\v^\s*%(class|module) (\S+)'],
-"   }
-"
-" The optional configuration parameter is a dictionary which can contain next
-" keys:
-"
-"   {
-"      'namespaces_with_same_indent': boolean // put namespace with same indent
-"                                            // in "namespace output.
-"   }
-"
-" If a line is matched, the substring corresponding to the 1st match group will
-" be returned. So for the above patterns this function might return something
-" like this:
-"
-"   {
-"     'test': ['test_calculates_time'],
-"     'test_line': 54, " Line where 'test_calculates_time' was found
-"     'namespace': ['CalculatorTest'],
-"   }
-function! test#base#nearest_test(position, patterns, ...) abort
-  let configuration = a:0 > 0 ? a:1 : {}
-  return test#base#nearest_test_in_lines(a:position['file'], a:position['line'], 1, a:patterns, configuration)
-endfunction
+	if ok then
+		return result
+	else
+		if result:match("E118") then
+			return vim.fn["test_" .. runner .. "_build_args"](args)
+		else
+			error(result)
+		end
+	end
+end
 
-" This function is used internally by the test#base#nearest_test function
-" So it behaves exactly like describe for test#base#nearest_test except that
-" it can search forward or backward depending on the search range.
-"
-" Instead of taking a "position" argument, this function takes 3:
-"   - "filename" is the equivalent of "position['file']"
-"   - "from_line" the line number from where to start the search, is the
-"   equivalent of "position['line']"
-"   - "to_line" the line number where to end the search (it would be 1 in
-"   test#base#nearest_test)
-"
-" If "from_line" is greater than "to_line" or equals '$' then the search will
-" be backward.
-" Otherwise it will be forward.
-function! test#base#nearest_test_in_lines(filename, from_line, to_line, patterns, ...) abort
-  let configuration = a:0 > 0 ? a:1 : {}
-  let test         = []
-  let namespace    = []
-  let last_indent  = -1
-  let current_line = a:from_line + 1
-  let test_line    = -1
-  let last_namespace_line = -1
-  let is_namespace_with_same_indent_allowed = get(configuration, 'namespaces_with_same_indent', 0)
-  let match_index = a:patterns->get('whole_match', 0) ? 0 : 1
+function M.file_exists(file)
+	return vim.fn.glob(file) ~= "" or vim.fn.bufexists(file) == 1
+end
 
-  let is_reverse = '$' == a:from_line ? 1 : a:from_line > a:to_line
-  let lines = is_reverse
-    \ ? reverse(getbufline(a:filename, a:to_line, a:from_line))
-    \ : getbufline(a:filename, a:from_line, a:to_line)
+function M.escape_regex(str)
+	return vim.fn.escape(str, "?+*\\^$.|{}[]()")
+end
 
-  for line in lines
-    let current_line    = current_line + (is_reverse ? -1 : 1)
-    let test_match      = s:find_match(line, a:patterns['test'])
-    let namespace_match = s:find_match(line, a:patterns['namespace'])
+function M.nearest_test(position, patterns, ...)
+	local configuration = select("#", ...) > 0 and select(1, ...) or {}
+	return M.nearest_test_in_lines(position.file, position.line, 1, patterns, configuration)
+end
 
-    let indent = len(matchstr(line, '^\s*'))
-    if !empty(test_match) 
-      \ && (last_indent == -1 
-          \ || (test_line == -1 
-              \ && last_indent > indent 
-              \ && last_namespace_line > current_line 
-              \ && last_namespace_line != -1
-          \ )
-        \ )
-      if last_namespace_line > current_line 
-        let namespace = []
-        let last_namespace_line = -1
-      endif
-      call add(test, filter(test_match[match_index:], '!empty(v:val)')[0])
-      let last_indent = indent
-      let test_line   = current_line
-    elseif !empty(namespace_match) && (is_namespace_with_same_indent_allowed || (indent < last_indent || last_indent == -1))
-      call add(namespace, filter(namespace_match[match_index:], '!empty(v:val)')[0])
-      let last_indent = indent
-      let last_namespace_line = current_line
-    endif
-  endfor
+function M.nearest_test_in_lines(filename, from_line, to_line, patterns, ...)
+	local configuration = select("#", ...) > 0 and select(1, ...) or {}
+	local test = {}
+	local namespace = {}
+	local last_indent = -1
+	local current_line = from_line + 1
+	local test_line = -1
+	local last_namespace_line = -1
+	local is_namespace_with_same_indent_allowed = configuration.namespaces_with_same_indent or false
+	local match_index = patterns.whole_match and 0 or 1
 
-  return {'test': test, 'test_line': test_line, 'namespace': reverse(namespace)}
-endfunction
+	local is_reverse = from_line == "$" or from_line > to_line
+	local lines = is_reverse and vim.fn.reverse(vim.fn.getbufline(filename, to_line, from_line))
+		or vim.fn.getbufline(filename, from_line, to_line)
 
-function! s:find_match(line, patterns) abort
-  let matches = map(copy(a:patterns), 'matchlist(a:line, v:val)')
-  return get(filter(matches, '!empty(v:val)'), 0, [])
-endfunction
+	for _, line in ipairs(lines) do
+		current_line = current_line + (is_reverse and -1 or 1)
+		local test_match = M.find_match(line, patterns.test)
+		local namespace_match = M.find_match(line, patterns.namespace)
+
+		local indent = #line:match("^%s*")
+		if
+			not vim.tbl_isempty(test_match)
+			and (
+				last_indent == -1
+				or (
+					test_line == -1
+					and last_indent > indent
+					and last_namespace_line > current_line
+					and last_namespace_line ~= -1
+				)
+			)
+		then
+			if last_namespace_line > current_line then
+				namespace = {}
+				last_namespace_line = -1
+			end
+			table.insert(
+				test,
+				vim.tbl_filter(function(v)
+					return v ~= ""
+				end, test_match[match_index])[1]
+			)
+			last_indent = indent
+			test_line = current_line
+		elseif
+			not vim.tbl_isempty(namespace_match)
+			and (is_namespace_with_same_indent_allowed or (indent < last_indent or last_indent == -1))
+		then
+			table.insert(
+				namespace,
+				vim.tbl_filter(function(v)
+					return v ~= ""
+				end, namespace_match[match_index])[1]
+			)
+			last_indent = indent
+			last_namespace_line = current_line
+		end
+	end
+
+	return { test = test, test_line = test_line, namespace = vim.fn.reverse(namespace) }
+end
+
+function M.find_match(line, patterns)
+	local matches = vim.tbl_map(function(pattern)
+		return vim.fn.matchlist(line, pattern)
+	end, patterns)
+	return vim.tbl_filter(function(match)
+		return not vim.tbl_isempty(match)
+	end, matches)[1] or {}
+end
+
+return M
