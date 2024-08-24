@@ -173,10 +173,6 @@ end
 function M.shell(cmd)
 	vim.g["test#last_command"] = cmd
 
-	if vim.g["test#transformation"] then
-		cmd = vim.g["test#custom_transformations"][vim.g["test#transformation"]](cmd)
-	end
-
 	vim.cmd(":AsyncRun " .. cmd)
 end
 

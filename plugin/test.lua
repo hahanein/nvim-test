@@ -61,9 +61,7 @@ vim.g["test#default_runners"] = {
 	-- Gleam = { "GleamTest" },
 }
 
--- Set custom strategies, transformations, and runner commands
-vim.g["test#custom_strategies"] = vim.tbl_get(vim.g, "test#custom_strategies") or {}
-vim.g["test#custom_transformations"] = vim.tbl_get(vim.g, "test#custom_transformations") or {}
+-- Set runner commands
 vim.g["test#runner_commands"] = vim.tbl_get(vim.g, "test#runner_commands") or {}
 
 local test = require("test")
