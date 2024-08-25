@@ -172,14 +172,13 @@ end
 
 function M.shell(cmd)
 	vim.g["test#last_command"] = cmd
-
 	vim.cmd(":AsyncRun " .. cmd)
 end
 
 function M.determine_runner(file)
 	for language, runners in pairs(M.get_runners()) do
+		require("test." .. string.lower(language))
 		for _, runner in ipairs(runners) do
-			require("test." .. string.lower(language))
 			runner = require("test." .. string.lower(language) .. "." .. string.lower(runner))
 			if vim.g["test#enabled_runners"] and not vim.tbl_contains(vim.g["test#enabled_runners"], runner) then
 				goto continue

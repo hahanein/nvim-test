@@ -23,12 +23,12 @@ function M.build_position(test_type, position)
 	if test_type == "nearest" then
 		local name = nearest_test(position)
 		if name == "" then
-			return { "test", position.file }
+			return { "--", position.file }
 		else
-			return { "test", position.file, "--test-filter " .. vim.fn.shellescape(name, 1) }
+			return { "--", position.file, "--test-filter " .. vim.fn.shellescape(name, 1) }
 		end
 	elseif test_type == "file" then
-		return { "test", position.file }
+		return { "--", position.file }
 	else
 		return {}
 	end
@@ -36,18 +36,12 @@ end
 
 -- Function to build the test command arguments
 function M.build_args(args)
-	if vim.tbl_isempty(vim.tbl_filter(function(val)
-		return base.file_exists(val)
-	end, vim.deepcopy(args))) then
-		table.insert(args, "build test")
-	end
-
 	return args
 end
 
 -- Function to get the test executable
 function M.executable()
-	return "zig"
+	return "zig build test"
 end
 
 return M
